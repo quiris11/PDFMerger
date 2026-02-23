@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+  content="default-src 'none';
+           script-src 'sha256-wF5bgRofBxSnhiicMH4ZoCy1a0D2tGWo+R7YEKXd3vs=' https://unpkg.com;
+           style-src 'unsafe-inline';
+           connect-src https://unpkg.com;  
+           worker-src blob:">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Łączenie dwustronnych PDF</title>
+  <style>
+    :root {
+      --bg: #f4f7f2; --panel: #ffffff; --ink: #1e2a1f; --muted: #5a6b5a;
+      --accent: #2f7a48; --accent-2: #c5e0cd; --border: #d5e3d5;
+      --warn: #8f5f00; --ok: #1f6e3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Segoe UI", Tahoma, Arial, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 10%, #e6f2e8 0%, transparent 45%),
+        radial-gradient(circle at 90% 85%, #e9f5ee 0%, transparent 40%),
+        var(--bg);
+      min-height: 100vh;
+    }
+    .wrap  { max-width: 980px; margin: 32px auto; padding: 0 16px; }
+    .card  { background: var(--panel); border: 1px solid var(--border);
+             border-radius: 16px; box-shadow: 0 10px 30px rgba(25,60,35,.08);
+             overflow: hidden; }
+    .head  { padding: 20px 24px; border-bottom: 1px solid var(--border);
+             background: linear-gradient(135deg, #f0f8f3 0%, #ffffff 75%); }
+    h1     { margin: 0 0 6px; font-size: 1.35rem; letter-spacing: .2px; }
+    .sub   { margin: 0; color: var(--muted); font-size: .95rem; }
+    .body  { padding: 22px 24px; display: grid; gap: 14px; }
+    .row   { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+    /* file input zones */
+    .file-zone {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      background: #fbfefb;
+      display: grid;
+      gap: 8px;
+    }
+    .file-zone label { font-weight: 600; font-size: .92rem; }
+    .file-zone .desc { color: var(--muted); font-size: .85rem; margin: 0; }
+    input[type="file"] {
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 8px; background: #fff; max-width: 100%;
+    }
+
+    /* checkbox row */
+    .check-row {
+      display: flex; align-items: center; gap: 10px;
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 14px; background: #fbfefb; font-size: .92rem;
+    }
+    input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--accent); }
+
+    button {
+      border: 1px solid #26663d; background: var(--accent); color: #fff;
+      border-radius: 10px; padding: 10px 20px; font-weight: 600;
+      font-size: .95rem; cursor: pointer;
+    }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .hint  { color: var(--muted); font-size: .9rem; }
+    .status {
+      border: 1px dashed var(--border); background: #fbfefb;
+      border-radius: 10px; padding: 10px; font-size: .92rem; white-space: pre-wrap;
+    }
+    .status.ok  { color: var(--ok);   border-color: var(--accent-2); background: #f3fbf6; }
+    .status.err { color: var(--warn); border-color: #f0d090;         background: #fffaf0; }
+    .status.wrn { color: var(--warn); border-color: #f0d090;         background: #fffdf5; }
+
+    .results { margin-top: 4px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .results table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+    .results th, .results td {
+      text-align: left; padding: 10px 12px;
+      border-bottom: 1px solid var(--border); vertical-align: top;
+    }
+    .results tr:last-child td { border-bottom: 0; }
+    .pill {
+      display: inline-block; border: 1px solid var(--accent-2); background: #f3fbf6;
+      color: var(--ok); border-radius: 999px; padding: 3px 8px;
+      font-size: .78rem; font-weight: 600;
+    }
+    .pill.warn { border-color: #f0d090; background: #fffdf5; color: var(--warn); }
+    .small { font-size: .82rem; color: var(--muted); }
+
+    .footer {
+      padding: 12px 24px 18px; color: var(--muted); font-size: .83rem;
+      border-top: 1px solid var(--border); background: #fcfffc;
+    }
+    .footer a { color: var(--accent); }
+    @media (max-width: 640px) {
+      .head, .body, .footer { padding-left: 14px; padding-right: 14px; }
+      h1 { font-size: 1.1rem; }
+    }
+  </style>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"
+          integrity="sha384-weMABwrltA6jWR8DDe9Jp5blk+tZQh7ugpCsF3JwSA53WZM9/14PjS5LAJNHNjAI"
+          crossorigin="anonymous"></script>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+
+    <div class="head">
+      <h1>Łączenie zeskanowanych dwustronnych dokumentów</h1>
+      <p class="sub">Scala dwa pliki PDF (strony nieparzyste + parzyste) w jeden dokument — lokalnie w przeglądarce.</p>
+    </div>
+
+    <div class="body">
+
+      <div class="file-zone">
+        <label for="oddFile">Plik ze stronami nieparzystymi</label>
+        <p class="desc">Strony: 1, 3, 5, 7… (w kolejności rosnącej)</p>
+        <input id="oddFile" type="file" accept="application/pdf,.pdf">
+      </div>
+
+      <div class="file-zone">
+        <label for="evenFile">Plik ze stronami parzystymi</label>
+        <p class="desc">Strony: 2, 4, 6, 8… (normalna lub odwrotna kolejność)</p>
+        <input id="evenFile" type="file" accept="application/pdf,.pdf">
+      </div>
+
+      <div class="check-row">
+        <input type="checkbox" id="reverseCheck">
+        <label for="reverseCheck">
+          Strony parzyste są w <strong>odwrotnej kolejności</strong>
+          <span class="small">(np. skan ułożony od tyłu: 6, 4, 2)</span>
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="mergeBtn" disabled>Połącz i pobierz</button>
+      </div>
+
+      <div class="hint">Plik nie opuszcza przeglądarki — przetwarzanie odbywa się lokalnie.</div>
+      <div id="status" class="status">Wybierz oba pliki, aby rozpocząć.</div>
+      <div id="results" class="results" hidden></div>
+
+    </div>
+
+    <div class="footer">
+      Algorytm: opcjonalne odwrócenie stron parzystych → przeplatanie (collate) → pobieranie.
+      Oparty na <a href="https://pdf-lib.js.org" target="_blank">pdf-lib</a>.
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const oddFileEl    = document.getElementById('oddFile');
+  const evenFileEl   = document.getElementById('evenFile');
+  const reverseCheck = document.getElementById('reverseCheck');
+  const mergeBtn     = document.getElementById('mergeBtn');
+  const statusEl     = document.getElementById('status');
+  const resultsEl    = document.getElementById('results');
+
+  const state = { result: null };
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function setStatus(msg, type = '') {
+    statusEl.textContent = msg;
+    statusEl.className   = 'status' + (type ? ' ' + type : '');
+  }
+
+  function triggerDownload(blob, filename) {
+    const url  = URL.createObjectURL(blob);
+    const link = Object.assign(document.createElement('a'), { href: url, download: filename });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+
+  function checkReady() {
+    mergeBtn.disabled = !(oddFileEl.files.length && evenFileEl.files.length);
+  }
+
+  oddFileEl.addEventListener('change',  checkReady);
+  evenFileEl.addEventListener('change', checkReady);
+
+  // ── Results table ──────────────────────────────────────────────────────────
+
+  function renderResults() {
+    if (!state.result) { resultsEl.hidden = true; resultsEl.innerHTML = ''; return; }
+
+    const { blob, filename, oddCount, evenCount, totalPages, reversed, size } = state.result;
+    const mismatch  = oddCount !== evenCount;
+    const countPill = mismatch
+      ? `<span class="pill warn" title="Różna liczba stron w plikach">⚠ ${totalPages} stron</span>`
+      : `<span class="pill">${totalPages} stron</span>`;
+    const mismatchNote = mismatch
+      ? `<div class="small" style="color:var(--warn)">Uwaga: nieparzyste (${oddCount}) ≠ parzyste (${evenCount}) — nadmiarowe strony doklejone na końcu</div>`
+      : '';
+    const revNote = reversed
+      ? `<div class="small">parzyste odwrócone przed splotem</div>`
+      : '';
+
+    resultsEl.hidden  = false;
+    resultsEl.innerHTML = `
+      <table>
+        <thead><tr>
+          <th>Wynik</th><th>Plik wyjściowy</th><th>Operacja</th><th>Akcja</th>
+        </tr></thead>
+        <tbody><tr>
+          <td>
+            ${countPill}
+            <div class="small">${oddCount} nieparz. + ${evenCount} parz.</div>
+            ${mismatchNote}
+          </td>
+          <td>
+            <code>${escapeHtml(filename)}</code>
+            <div class="small">${size.toLocaleString('pl-PL')} bajtów</div>
+          </td>
+          <td>
+            Przeplatanie (collate)
+            ${revNote}
+          </td>
+          <td><button class="dl-btn">Pobierz</button></td>
+        </tr></tbody>
+      </table>`;
+
+    resultsEl.querySelector('.dl-btn')
+      .addEventListener('click', () => triggerDownload(blob, filename));
+  }
+
+  // ── Core merge logic ───────────────────────────────────────────────────────
+
+  mergeBtn.addEventListener('click', async () => {
+    mergeBtn.disabled = true;
+    state.result = null;
+    renderResults();
+    setStatus('Wczytywanie plików…');
+
+    try {
+      const [oddBytes, evenBytes] = await Promise.all([
+        oddFileEl.files[0].arrayBuffer(),
+        evenFileEl.files[0].arrayBuffer(),
+      ]);
+
+      setStatus('Przetwarzanie…');
+
+      const [oddDoc, evenDoc] = await Promise.all([
+        PDFLib.PDFDocument.load(oddBytes),
+        PDFLib.PDFDocument.load(evenBytes),
+      ]);
+
+      const oddCount  = oddDoc.getPageCount();
+      const evenCount = evenDoc.getPageCount();
+
+      // Build index arrays
+      const oddIndices  = Array.from({ length: oddCount  }, (_, i) => i);
+      let   evenIndices = Array.from({ length: evenCount }, (_, i) => i);
+      if (reverseCheck.checked) evenIndices = evenIndices.reverse();
+
+      // Create output document and copy all pages from both sources
+      const outDoc   = await PDFLib.PDFDocument.create();
+      const oddPages  = await outDoc.copyPages(oddDoc,  oddIndices);
+      const evenPages = await outDoc.copyPages(evenDoc, evenIndices);
+
+      // Collate: interleave odd[i], even[i] for each pair, append remainders
+      const maxLen = Math.max(oddPages.length, evenPages.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (i < oddPages.length)  outDoc.addPage(oddPages[i]);
+        if (i < evenPages.length) outDoc.addPage(evenPages[i]);
+      }
+
+      const outBytes = await outDoc.save();
+      const blob     = new Blob([outBytes], { type: 'application/pdf' });
+
+      // Derive output filename from odd file's name
+      const baseName = oddFileEl.files[0].name.replace(/\.pdf$/i, '');
+      const filename = baseName + '_merged.pdf';
+
+      state.result = {
+        blob, filename,
+        oddCount, evenCount,
+        totalPages: outDoc.getPageCount(),
+        reversed: reverseCheck.checked,
+        size: outBytes.byteLength,
+      };
+
+      renderResults();
+      setStatus(`✓ Połączono ${oddCount} + ${evenCount} stron.`, 'ok');
+
+    } catch (err) {
+      setStatus('Błąd: ' + err.message, 'err');
+      console.error(err);
+    } finally {
+      mergeBtn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
